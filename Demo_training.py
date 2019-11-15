@@ -23,7 +23,7 @@ plot_some(X_val[:5],Y_val[:5])
 plt.suptitle('Example validation patches (top: low SNR, bottom: GT)');
 
 # Config a Unet model for denoising. Note traing_steps_per_epoch needs to be ~400 to get promising results
-config = Config(axes, n_channel_in, n_channel_out, residual = True, unet_n_depth=2, train_steps_per_epoch=10)
+config = Config(axes, n_channel_in, n_channel_out, residual = True, unet_n_depth=2, train_steps_per_epoch=400)
 print(config)
 vars(config)
 
