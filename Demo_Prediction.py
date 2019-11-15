@@ -20,7 +20,7 @@ The configuration was saved during training and is automatically loaded
 when DLSRS is initialized with config=None.
 """
 
-model = Unet_Denoising_hyperspectral (config=None, name='miapaca2_dataset', basedir='models')
+model = Unet_Denoising_hyperspectral (config=None, name='miapaca2_dataset', basedir='Models')
 axes = 'ZYX'
 
 x = imread('./Data/Testing_set/low_SNR/MiaPaCa2_fixed_control_889nm_30mW_1040nm_200mW_nframe_10_6rods_1.tif')

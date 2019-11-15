@@ -19,7 +19,7 @@ try:
 except (ImportError,AttributeError):
     from pathlib2 import Path
 
-from Misc_and_data_IO import backend_channels_last, _raise, move_channel_for_backend, tile_iterator 
+from Misc_and_data_IO import backend_channels_last, _raise, move_channel_for_backend, tile_iterator , Normalizer
 from Misc_and_data_IO import Resizer, consume, is_tf_backend, axes_check_and_normalize, axes_dict, load_json, save_json
 from Misc_and_data_IO import export_SavedModel, PercentileNormalizer, PadAndCropResizer, move_image_axes, NoNormalizer
 
