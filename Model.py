@@ -42,7 +42,7 @@ import warnings
 
 
 
-def unet(n_dim=3, n_depth=1, kern_size=3, n_first=16, n_channel_out=1, residual=True, prob_out=False, last_activation='linear'):
+def unet(n_dim=3, n_depth=2, kern_size=3, n_first=16, n_channel_out=1, unet_conv_kernel = '2plus1', residual=True, prob_out=False, last_activation='linear'):
     """Construct a deeep neural network with U-Net and residual learning
 
     Parameters
@@ -68,43 +68,46 @@ def unet(n_dim=3, n_depth=1, kern_size=3, n_first=16, n_channel_out=1, residual=
     function
         Function to construct the network, which takes as argument the shape of the input image
 
-    Example
-    -------
-    >>> model = unet(2, 1,3,16, 1, True, False)(input_shape)
-
-    References
-    ----------
-    .. [1] Olaf Ronneberger, Philipp Fischer, Thomas Brox, *U-Net: Convolutional Networks for Biomedical Image Segmentation*, MICCAI 2015
-    .. [2] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun. *Deep Residual Learning for Image Recognition*, CVPR 2016
     """
     def _build_this(input_shape):
-        return custom_unet(input_shape, last_activation, n_depth, n_first, (kern_size,)*n_dim, pool_size=(2,)*n_dim, n_channel_out=n_channel_out, residual=residual)
-    return _build_this
+        if unet_conv_kernel == '2plus1':
+            return custom_unet_2plus1(input_shape, last_activation, n_depth, n_first, (kern_size,)*n_dim,  
+                                      pool_size=(2,)*n_dim, n_channel_out=n_channel_out, residual=residual)
+        elif  unet_conv_kernel == '3D':
+            return custom_unet(input_shape, last_activation, n_depth, n_first, (kern_size,)*n_dim, 
+                               pool_size=(2,)*n_dim, n_channel_out=n_channel_out, residual=residual)
+        elif unet_conv_kernel == '2plus1ABC':
+            return custom_unet_2plus1_ABC(input_shape, last_activation, n_depth, n_first, (kern_size,)*n_dim,  
+                                      pool_size=(2,)*n_dim, n_channel_out=n_channel_out, residual=residual)
+        
+    return _build_this 
 
 def custom_unet(input_shape,
                 last_activation,
                 n_depth=2,
                 n_filter_base=16,
                 kernel_size=(3,3,3),
-                n_conv_per_depth=2,
+                n_conv_per_depth=3,
                 activation="relu",
-                batch_norm=False,
+                batch_norm=True,
                 dropout=0.0,
                 pool_size=(2,2,2),
                 n_channel_out=1,
-                residual=False,
+                residual=True,
                 eps_scale=1e-3):
 
     if last_activation is None:
         raise ValueError("last activation has to be given (e.g. 'sigmoid', 'relu')!")
 
     all((s % 2 == 1 for s in kernel_size)) or _raise(ValueError('kernel size should be odd in all dimensions.'))
-
+    
     
     n_dim = len(kernel_size)
     conv = Conv3D
 
+
     input = Input(input_shape, name = "input")
+   
     unet_body = unet_block(n_depth, n_filter_base, kernel_size,
                       activation=activation, dropout=dropout, batch_norm=batch_norm,
                       n_conv_per_depth=n_conv_per_depth, pool=pool_size)(input)
@@ -118,7 +121,88 @@ def custom_unet(input_shape,
 
     return Model(inputs=input, outputs=final)
 
-def unet_block(n_depth=2, n_filter_base=16, kernel_size=(3,3,3), n_conv_per_depth=2,
+
+def custom_unet_2plus1(input_shape,
+                last_activation,
+                n_depth=3,
+                n_filter_base=16,
+                kernel_size=(3,3,3),
+                n_conv_per_depth=3,
+                activation="relu",
+                batch_norm=True,
+                dropout=0.0,
+                pool_size=(2,2,2),
+                n_channel_out=1,
+                residual=True,
+                eps_scale=1e-3):
+
+    if last_activation is None:
+        raise ValueError("last activation has to be given (e.g. 'sigmoid', 'relu')!")
+
+    all((s % 2 == 1 for s in kernel_size)) or _raise(ValueError('kernel size should be odd in all dimensions.'))
+    
+    
+    n_dim = len(kernel_size)
+    conv = Conv3D
+    
+
+    input = Input(input_shape, name = "input")
+    
+    unet_body = unet_block_2plus1(n_depth, n_filter_base, kernel_size,
+                      activation=activation, dropout=dropout, batch_norm=batch_norm,
+                      n_conv_per_depth=n_conv_per_depth, pool=pool_size)(input)
+
+    final = conv(n_channel_out, (1,)*n_dim, activation='linear')(unet_body)
+    if residual:
+        if not (n_channel_out == input_shape[-1] if backend_channels_last() else n_channel_out == input_shape[0]):
+            raise ValueError("number of input and output channels must be the same for a residual net.")
+        final = Add()([final, input])
+    final = Activation(activation=last_activation)(final)
+
+    return Model(inputs=input, outputs=final)
+
+
+def custom_unet_2plus1_ABC(input_shape,
+                last_activation,
+                n_depth=3,
+                n_filter_base=16,
+                kernel_size=(3,3,3),
+                n_conv_per_depth=3,
+                activation="relu",
+                batch_norm=True,
+                dropout=0.0,
+                pool_size=(2,2,2),
+                n_channel_out=1,
+                residual=True,
+                eps_scale=1e-3):
+
+    if last_activation is None:
+        raise ValueError("last activation has to be given (e.g. 'sigmoid', 'relu')!")
+
+    all((s % 2 == 1 for s in kernel_size)) or _raise(ValueError('kernel size should be odd in all dimensions.'))
+    
+    
+    n_dim = len(kernel_size)
+    conv = Conv3D
+    
+
+    input = Input(input_shape, name = "input")
+    
+    unet_body = unet_block_2plus1_ABC(n_depth, n_filter_base, kernel_size,
+                      activation=activation, dropout=dropout, batch_norm=batch_norm,
+                      n_conv_per_depth=n_conv_per_depth, pool=pool_size)(input)
+
+    final = conv(n_channel_out, (1,)*n_dim, activation='linear')(unet_body)
+    if residual:
+        if not (n_channel_out == input_shape[-1] if backend_channels_last() else n_channel_out == input_shape[0]):
+            raise ValueError("number of input and output channels must be the same for a residual net.")
+        final = Add()([final, input])
+    final = Activation(activation=last_activation)(final)
+
+    return Model(inputs=input, outputs=final)
+
+
+def unet_block(n_depth=2, n_filter_base=16, kernel_size=(3,3,3), n_conv_per_depth=3,
                activation="relu",
                batch_norm=False,
                dropout=0.0,
@@ -189,6 +273,167 @@ def unet_block(n_depth=2, n_filter_base=16, kernel_size=(3,3,3), n_conv_per_dept
     return _func
 
 
+def unet_block_2plus1(n_depth=2, n_filter_base=16, kernel_size=(3,3,3), n_conv_per_depth=3,
+               activation="relu",
+               batch_norm=False,
+               dropout=0.0,
+               last_activation=None,
+               pool=(2,2,2),
+               prefix=''):
+
+    if len(pool) != len(kernel_size):
+        raise ValueError('kernel and pool sizes must match.')
+    n_dim = len(kernel_size)
+    if n_dim not in (2,3):
+        raise ValueError('unet_block only 2d or 3d.')
+
+    conv_block =  conv_block2plus1
+    pooling    =  MaxPooling3D
+    upsampling =  UpSampling3D
+
+    if last_activation is None:
+        last_activation = activation
+
+    channel_axis = -1 if backend_channels_last() else 1
+
+    def _name(s):
+        return prefix+s
+
+    def _func(input):
+        skip_layers = []
+        layer = input
+
+        # down ...
+        for n in range(n_depth):
+            layer = Conv3D(n_filter_base * 2 ** n, (1, 1, 1), padding="same", activation=activation)(layer)
+            for i in range(n_conv_per_depth):
+                layer = conv_block(n_filter_base * 2 ** n , *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("down_level_%s_no_%s" % (n, i)))(layer)
+            skip_layers.append(layer)
+            layer = pooling(pool, name=_name("max_%s" % n))(layer)
+
+        # middle
+        layer = Conv3D(n_filter_base * 2 ** n_depth, (1, 1, 1), padding="same", activation=activation)(layer)
+        for i in range(n_conv_per_depth):
+            layer = conv_block(n_filter_base* 2 ** n_depth, *kernel_size,
+                               dropout=dropout,
+                               activation=activation,
+                               batch_norm=batch_norm, name=_name("middle_%s" % i))(layer)
+        layer = Conv3D(n_filter_base * 2 ** max(0, n_depth - 1), (1, 1, 1), padding="same", activation=activation)(layer)
+
+        # ...and up with skip layers
+        for n in reversed(range(n_depth)):
+            layer = Concatenate(axis=channel_axis)([upsampling(pool)(layer), skip_layers[n]])
+            layer = Conv3D(n_filter_base * 2 ** n, (1, 1, 1), padding="same", activation=activation)(layer)
+            
+            for i in range(n_conv_per_depth):
+                layer = conv_block(n_filter_base * 2 ** n, *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("up_level_%s_no_%s" % (n, i)))(layer)
+            
+            layer = Conv3D(n_filter_base * 2 ** max(0, n - 1), (1, 1, 1), padding="same", activation=activation)(layer)
+           
+
+        return layer
+
+    return _func
+
+def unet_block_2plus1_ABC(n_depth=2, n_filter_base=16, kernel_size=(3,3,3), n_conv_per_depth=3,
+               activation="relu",
+               batch_norm=False,
+               dropout=0.0,
+               last_activation=None,
+               pool=(2,2,2),
+               prefix=''):
+
+    if len(pool) != len(kernel_size):
+        raise ValueError('kernel and pool sizes must match.')
+    n_dim = len(kernel_size)
+    if n_dim not in (2,3):
+        raise ValueError('unet_block only 2d or 3d.')
+
+    conv_blockB = conv_block2plus1
+    conv_blockA = conv_block2plus1_A
+    conv_blockC = conv_block2plus1_C
+    pooling    =  MaxPooling3D
+    upsampling =  UpSampling3D
+
+    if last_activation is None:
+        last_activation = activation
+
+    channel_axis = -1 if backend_channels_last() else 1
+
+    def _name(s):
+        return prefix+s
+
+    def _func(input):
+        skip_layers = []
+        layer = input
+
+        # down ...
+        for n in range(n_depth):
+            layer = Conv3D(n_filter_base * 2 ** n, (1, 1, 1), padding="same", activation=activation)(layer)
+            for i in range(int(n_conv_per_depth/3)):
+                layer = conv_blockA(n_filter_base * 2 ** n , *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("down_A_level_%s_no_%s" % (n, i)))(layer)
+                layer = conv_blockB(n_filter_base * 2 ** n , *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("down_B_level_%s_no_%s" % (n, i)))(layer)
+                layer = conv_blockC(n_filter_base * 2 ** n , *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("down_C_level_%s_no_%s" % (n, i)))(layer)
+            skip_layers.append(layer)
+            layer = pooling(pool, name=_name("max_%s" % n))(layer)
+
+        # middle
+        layer = Conv3D(n_filter_base * 2 ** n_depth, (1, 1, 1), padding="same", activation=activation)(layer)
+        for i in range(int(n_conv_per_depth/3)):
+            layer = conv_blockA(n_filter_base* 2 ** n_depth, *kernel_size,
+                               dropout=dropout,
+                               activation=activation,
+                               batch_norm=batch_norm, name=_name("middle_A_%s" % i))(layer)
+            layer = conv_blockB(n_filter_base* 2 ** n_depth, *kernel_size,
+                               dropout=dropout,
+                               activation=activation,
+                               batch_norm=batch_norm, name=_name("middle_B_%s" % i))(layer)
+            layer = conv_blockC(n_filter_base* 2 ** n_depth, *kernel_size,
+                               dropout=dropout,
+                               activation=activation,
+                               batch_norm=batch_norm, name=_name("middle_C_%s" % i))(layer)
+        layer = Conv3D(n_filter_base * 2 ** max(0, n_depth - 1), (1, 1, 1), padding="same", activation=activation)(layer)
+
+        # ...and up with skip layers
+        for n in reversed(range(n_depth)):
+            layer = Concatenate(axis=channel_axis)([upsampling(pool)(layer), skip_layers[n]])
+            layer = Conv3D(n_filter_base * 2 ** n, (1, 1, 1), padding="same", activation=activation)(layer)
+            
+            for i in range(int(n_conv_per_depth)):
+                layer = conv_blockA(n_filter_base * 2 ** n, *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("up_A_level_%s_no_%s" % (n, i)))(layer)
+                layer = conv_blockB(n_filter_base * 2 ** n, *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("up_B_level_%s_no_%s" % (n, i)))(layer)
+                layer = conv_blockC(n_filter_base * 2 ** n, *kernel_size,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm, name=_name("up_C_level_%s_no_%s" % (n, i)))(layer)
+            
+            layer = Conv3D(n_filter_base * 2 ** max(0, n - 1), (1, 1, 1), padding="same", activation=activation)(layer)
+           
+
+        return layer
+
+    return _func
 
 def conv_block3(n_filter, n1, n2, n3,
                 activation="relu",
@@ -205,6 +450,116 @@ def conv_block3(n_filter, n1, n2, n3,
             s = Activation(activation)(s)
         else:
             s = Conv3D(n_filter, (n1, n2, n3), padding=border_mode, kernel_initializer=init, activation=activation, **kwargs)(lay)
+        if dropout is not None and dropout > 0:
+            s = Dropout(dropout)(s)
+        return s
+
+    return _func
+
+def conv_block2plus1(n_filter, n1, n2, n3,
+                activation="relu",
+                border_mode="same",
+                dropout=0.0,
+                batch_norm=False,
+                init="glorot_uniform",
+                **kwargs):
+    channel_axis = -1 if backend_channels_last() else 1
+    def _func(lay):
+        #n_filter_input = lay.get_shape()[-1].value
+        #lay.get_shape().as_list()[-1]
+        if batch_norm:
+            s1 = Conv3D(n_filter, (n1, 1, 1), padding=border_mode, kernel_initializer=init)(lay)
+            s1 = BatchNormalization()(s1)
+            s1 = Activation(activation)(s1)
+            
+            s2 = Conv3D(n_filter, (1, n2, n3), padding=border_mode, kernel_initializer=init)(lay)
+            s2 = BatchNormalization()(s2)
+            s2 = Activation(activation)(s2)
+            
+            s = Concatenate(axis=channel_axis)([s1, s2])
+            s = Conv3D(n_filter, (1, 1, 1), padding=border_mode, kernel_initializer=init, activation=activation, **kwargs)(s)
+            
+            s = Add()([lay, s])
+            
+        else:
+            s1 = Conv3D(n_filter, (n1, n2, 1), padding=border_mode, kernel_initializer=init, activation=activation)(lay)
+            s2 = Conv3D(n_filter, (1, 1, n3), padding=border_mode, kernel_initializer=init, activation=activation)(lay)
+            s = Concatenate(axis=channel_axis)([s1, s2])
+            s = Conv3D(n_filter, (1, 1, 1), padding=border_mode, kernel_initializer=init, activation=activation, **kwargs)(s)
+            
+            s = Add()([lay, s])
+        if dropout is not None and dropout > 0:
+            s = Dropout(dropout)(s)
+        return s
+
+    return _func
+
+
+def conv_block2plus1_A(n_filter, n1, n2, n3,
+                activation="relu",
+                border_mode="same",
+                dropout=0.0,
+                batch_norm=False,
+                init="glorot_uniform",
+                **kwargs):
+    channel_axis = -1 if backend_channels_last() else 1
+    def _func(lay):
+        #n_filter_input = lay.get_shape()[-1].value
+        #lay.get_shape().as_list()[-1]
+        if batch_norm:
+            s = Conv3D(n_filter, (n1, 1, 1), padding=border_mode, kernel_initializer=init)(lay)
+            s = BatchNormalization()(s)
+            s = Activation(activation)(s)
+            
+            s = Conv3D(n_filter, (1, n2, n3), padding=border_mode, kernel_initializer=init)(s)
+            s = BatchNormalization()(s)
+            s = Activation(activation)(s)
+            
+            s = Add()([lay, s])
+            
+        else:
+            s = Conv3D(n_filter, (n1, n2, 1), padding=border_mode, kernel_initializer=init, activation=activation)(lay)
+            s = Conv3D(n_filter, (1, 1, n3), padding=border_mode, kernel_initializer=init, activation=activation)(s)
+            
+            s = Add()([lay, s])
+        if dropout is not None and dropout > 0:
+            s = Dropout(dropout)(s)
+        return s
+
+    return _func
+
+def conv_block2plus1_C(n_filter, n1, n2, n3,
+                activation="relu",
+                border_mode="same",
+                dropout=0.0,
+                batch_norm=False,
+                init="glorot_uniform",
+                **kwargs):
+    channel_axis = -1 if backend_channels_last() else 1
+    def _func(lay):
+        #n_filter_input = lay.get_shape()[-1].value
+        #lay.get_shape().as_list()[-1]
+        if batch_norm:
+            s1 = Conv3D(n_filter, (n1, 1, 1), padding=border_mode, kernel_initializer=init)(lay)
+            s1 = BatchNormalization()(s1)
+            s1 = Activation(activation)(s1)
+            
+            s2 = Conv3D(n_filter, (1, n2, n3), padding=border_mode, kernel_initializer=init)(s1)
+            s2 = BatchNormalization()(s2)
+            s2 = Activation(activation)(s2)
+            
+            s = Concatenate(axis=channel_axis)([s1, s2])
+            s = Conv3D(n_filter, (1, 1, 1), padding=border_mode, kernel_initializer=init, activation=activation, **kwargs)(s)
+            
+            s = Add()([lay, s])
+            
+        else:
+            s1 = Conv3D(n_filter, (n1, n2, 1), padding=border_mode, kernel_initializer=init, activation=activation)(lay)
+            s2 = Conv3D(n_filter, (1, 1, n3), padding=border_mode, kernel_initializer=init, activation=activation)(s1)
+            s = Concatenate(axis=channel_axis)([s1, s2])
+            s = Conv3D(n_filter, (1, 1, 1), padding=border_mode, kernel_initializer=init, activation=activation, **kwargs)(s)
+            
+            s = Add()([lay, s])
         if dropout is not None and dropout > 0:
             s = Dropout(dropout)(s)
         return s
@@ -536,7 +891,7 @@ class _TensorBoard(Callback):
         if self.validation_data and self.freq:
             if epoch % self.freq == 0:
                 if self.model.uses_learning_phase:
-                   # cut_v_data = len(self.model.inputs)
+                    cut_v_data = len(self.model.inputs)
                     val_data = self.validation_data + [0]
                     tensors = self.model.inputs + [K.learning_phase()]
                 else:
@@ -601,7 +956,7 @@ class Config(argparse.Namespace):
     unet_kern_size : int
         Parameter `kern_size` of :func:`unet`. Default: ``5 if n_dim==2 else 3``
     unet_n_first : int
-        Parameter `n_first` of :func:`unet`. Default: ``32``
+        Parameter `n_first` of :func:`unet`. Default: ``16``
     unet_last_activation : str
         Parameter `last_activation` of :func:`unet`. Default: ``linear``
     train_loss : str
@@ -663,8 +1018,9 @@ class Config(argparse.Namespace):
         self.unet_residual         = self.n_channel_in == self.n_channel_out
         self.unet_n_depth          = 2
         self.unet_kern_size        = 5 if self.n_dim==2 else 3
-        self.unet_n_first          = 32
+        self.unet_n_first          = 16
         self.unet_last_activation  = 'linear'
+        self.unet_conv_kernel      = '2plus1'
         if backend_channels_last():
             self.unet_input_shape  = self.n_dim*(None,) + (self.n_channel_in,)
         else:
@@ -674,8 +1030,8 @@ class Config(argparse.Namespace):
         self.train_epochs          = 100
         self.train_steps_per_epoch = 400
         self.train_learning_rate   = 0.0004
-        self.train_batch_size      = 16
-        self.train_tensorboard     = True
+        self.train_batch_size      = 1
+        self.train_tensorboard     = False
         self.train_checkpoint      = 'weights_best.h5'
         self.train_reduce_lr       = {'factor': 0.5, 'patience': 10}
 
@@ -724,6 +1080,8 @@ class Config(argparse.Namespace):
             self.unet_input_shape[-1] == self.n_channel_in and
             all((d is None or (_is_int(d) and d%(2**self.unet_n_depth)==0) for d in self.unet_input_shape[:-1]))
         )
+        
+        ok['unet_conv_kernel'] = self.unet_conv_kernel in ('2plus1','3D','2plus1ABC')
         ok['train_loss'] = (
             (    self.probabilistic and self.train_loss == 'laplace'   ) or
             (not self.probabilistic and self.train_loss in ('mse','mae'))
@@ -846,6 +1204,7 @@ class Unet_Denoising_hyperspectral(object):
             kern_size       = self.config.unet_kern_size,
             n_first         = self.config.unet_n_first,
             last_activation = self.config.unet_last_activation,
+            unet_conv_kernel= self.config.unet_conv_kernel
         )(self.config.unet_input_shape)
 
 
